@@ -13,7 +13,7 @@ typedef void (*CallBackFunction) ();
 
 class iTCU {
 public:
-        iTCU(uint8_t enPin, uint8_t pwnPin1, uint8_t pwnPin2)
+        iTCU(uint8_t enPin, uint8_t pwnPin1, uint8_t pwnPin2);
         void forward();
         void forwardFor(unsigned long delay, CallBackFunction callback);
         void forwardFor(unsigned long delay);

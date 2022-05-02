@@ -8,9 +8,9 @@
 #include <SPI.h>
 
 // Motor controller pin definitions
-#define ENA 9 
+#define ENA 9
 #define PWNA1 10
-#define PWNA2 11 
+#define PWNA2 11
 #define ENB 4
 #define PWNB1 5
 #define PWNB2 6
@@ -23,8 +23,8 @@ iTCU clutchMotor(ENB, PWNB1, PWNB2);
 int gearPotVal = 0;
 
 // Sensing pins and inital values
-int CSRA = A0;
-int CSRB = A1;
+int CSRA = A2;
+int CSRB = A3;
 int thermistor = A4;
 
 int currRawA = 0;
@@ -54,12 +54,12 @@ int shiftBuffer[32];
 
 
 // Motor timing & speed values
-int gearSpeedCW = 255;
-int gearSpeedCCW = 255;
-int gearUpTime = 1000;
-int gearDownTime = 1000;
+int gearSpeedCW = 200;
+int gearSpeedCCW = 200;
+int gearUpTime = 500;
+int gearDownTime = 250;
 int clutchSpeed = 255;
-int clutchTime = 500;
+int clutchTime = 250;
 int shiftInput = 0;
 
 // Misc variables
@@ -73,7 +73,7 @@ enum : byte {
   DO_NOTHING,
   TAKE_A_SCREENSHOT
 } shiftState;
-int input[2] = {0,0};
+int input[2] = {0, 0};
 
 bool completeShift = false;
 bool completeUpA = false;
@@ -89,24 +89,24 @@ void setup() {
 
   pinMode(upRequest, INPUT);
   pinMode(downRequest, INPUT);
-  
+
   pinMode(gearPotPin, INPUT);
-  
+
   gearMotor.setSpeed(gearSpeedCW);
   clutchMotor.setSpeed(clutchSpeed);
 
   shiftState = DO_NOTHING;
   Serial.println("Begin program");
-  
+
 }
 
 void loop() {
   //Serial.println("Main loop");
 
 
-  // Comment out these lines when using CAN. This is for direct inputs
-  upReqVal = analogRead(A4);
-  downReqVal = analogRead(A5);
+  gearPotVal = analogRead(gearPotPin);
+  upReqVal = analogRead(upRequest);
+  downReqVal = analogRead(downRequest);
 
   if (upReqVal < 300) {
     upShift = 1;
@@ -120,15 +120,23 @@ void loop() {
   else {
     downShift = 0;
   }
+
+  Serial.print("Up Request Val = ");
+  Serial.print(upReqVal);
   Serial.print("Up Shift = ");
   Serial.print(upShift);
+  Serial.print(" | Down Request Val = ");
+  Serial.print(downReqVal);
   Serial.print(" | Down Shift = ");
-  Serial.println(downShift);
+  Serial.print(downShift);
+  Serial.print(" | Potentiometer Value = ");
+  Serial.println(gearPotVal);
+
   input[0] = upShift;
   input[1] = downShift;
 
-  
-  if (input[0] == 1 && input[1] == 1){
+
+  if (input[0] == 1 && input[1] == 1) {
     shiftState = TAKE_A_SCREENSHOT;
   }
   else if (input[0] == 1) {
@@ -142,115 +150,120 @@ void loop() {
   }
 
 
-completeShift = false;
-completeUpA = false;
-completeUpB = false;
-completeDownGearA = false;
-completeDownGearB = false;
-completeDownClutchA = false;
-completeDownClutchB = false;
+  completeShift = false;
+  completeUpA = false;
+  completeUpB = false;
+  completeDownGearA = false;
+  completeDownGearB = false;
+  completeDownClutchA = false;
+  completeDownClutchB = false;
 
 
-    
-previousMillis = millis();
-// Shifting controls
-switch(shiftState) {
-  case UPSHIFT:
-    Serial.println("UPSHIFT");
-    gearMotor.forward();
-    
-    while(!completeShift) {
-    
-    if (millis() - previousMillis > gearUpTime && completeUpA == false && completeUpB == false) {
-      Serial.println("Upshift sequence A");
-      gearMotor.stop();
-      previousMillis = millis();
-      completeUpA = true;
+
+  previousMillis = millis();
+  // Shifting controls
+  switch (shiftState) {
+    case UPSHIFT:
+      Serial.println("UPSHIFT");
+      gearMotor.forward();
+
+      while (!completeShift) {
+        gearPotVal = analogRead(gearPotPin);
+        Serial.print(" | Potentiometer Value = ");
+        Serial.println(gearPotVal);
+        if (millis() - previousMillis > gearUpTime && completeUpA == false && completeUpB == false) {
+          Serial.println("Upshift sequence A");
+          gearMotor.stop();
+          previousMillis = millis();
+          completeUpA = true;
+          gearMotor.backward();
+        }
+        else if (millis() - previousMillis > gearUpTime / 2 && completeUpA == true && completeUpB == false) {
+          Serial.println("Upshift sequence B");
+          gearMotor.stop();
+          previousMillis = millis();
+          completeUpB = true;
+        }
+
+        if (completeUpA == true && completeUpB == true) {
+          Serial.println("Upshift complete");
+          completeShift = true;
+        }
+      }
+
+      shiftState = DO_NOTHING;
+
+      break;
+
+    case DOWNSHIFT:
+      Serial.println("DOWNSHIFT");
       gearMotor.backward();
-    }
-    else if (millis() - previousMillis > gearUpTime/2 && completeUpA == true && completeUpB == false) {
-      Serial.println("Upshift sequence B");
-      gearMotor.stop();
-      previousMillis = millis();
-      completeUpB = true;
-    }
+      clutchMotor.forward();
 
-    if (completeUpA == true && completeUpB == true) {
-      Serial.println("Upshift complete");
-      completeShift = true;
-    }
-    }
-   
-    shiftState = DO_NOTHING;
+      while (!completeShift) {
+        gearPotVal = analogRead(gearPotPin);
+        Serial.print(" | Potentiometer Value = ");
+        Serial.println(gearPotVal);
+        if ((millis() - previousMillis > gearDownTime || millis() - previousMillis > clutchTime) && (completeDownGearA == false || completeDownClutchA == false) && completeDownGearB == false && completeDownClutchB == false) {
+          if (millis() - previousMillis > gearDownTime && completeDownGearA == false) {
+            Serial.println("Downshift gear sequence A");
+            gearMotor.stop();
+            completeDownGearA = true;
+          }
 
-  break;
+          else if (millis() - previousMillis > clutchTime && completeDownClutchA == false) {
+            Serial.println("Downshift clutch sequence A");
+            clutchMotor.stop();
+            completeDownClutchA = true;
+          }
+          if (completeDownGearA == true && completeDownClutchA == true && completeDownGearB == false && completeDownClutchB == false) {
+            Serial.println("Downshift gear and clutch sequence complete");
+            previousMillis = millis();
+            gearMotor.forward();
+            clutchMotor.backward();
+          }
+        }
 
-  case DOWNSHIFT:
-    Serial.println("DOWNSHIFT");
-    gearMotor.backward();
-    clutchMotor.forward();
+        else if ((millis() - previousMillis > gearDownTime / 2 || millis() - previousMillis > clutchTime) && completeDownGearA == true && completeDownClutchA == true && (completeDownGearB == false || completeDownClutchB == false)) {
+          if (millis() - previousMillis > gearDownTime / 2 && completeDownGearB == false) {
+            Serial.println("Downshift gear sequence B");
+            gearMotor.stop();
+            completeDownGearB = true;
+          }
 
-    while(!completeShift) {
-    if ((millis() - previousMillis > gearDownTime || millis() - previousMillis > clutchTime) && (completeDownGearA == false || completeDownClutchA == false) && completeDownGearB == false && completeDownClutchB == false) {
-      if (millis() - previousMillis > gearDownTime && completeDownGearA == false) {
-        Serial.println("Downshift gear sequence A");
-        gearMotor.stop();
-        completeDownGearA = true;
+          else if (millis() - previousMillis > clutchTime && completeDownClutchB == false) {
+            Serial.println("Downshift clutch sequence B");
+            clutchMotor.stop();
+            completeDownClutchB = true;
+          }
+          if (completeDownGearB == true && completeDownClutchB == true) {
+            Serial.println("Downshift gear and clutch sequence B");
+            previousMillis = millis();
+            gearMotor.stop();
+            clutchMotor.stop();
+          }
+        }
+
+        if (completeDownGearB == true && completeDownClutchB == true && completeDownGearB == true && completeDownClutchB == true) {
+          Serial.println("Downshift sequence complete");
+          completeShift = true;
+        }
       }
+      shiftState = DO_NOTHING;
+      break;
 
-      else if (millis() - previousMillis > clutchTime && completeDownClutchA == false) {
-        Serial.println("Downshift clutch sequence A");
-        clutchMotor.stop();
-        completeDownClutchA = true;
-      }
-      if(completeDownGearA == true && completeDownClutchA == true && completeDownGearB == false && completeDownClutchB == false) {
-        Serial.println("Downshift gear and clutch sequence complete");
-        previousMillis = millis();  
-        gearMotor.forward();
-        clutchMotor.backward();    
-      }
-    }
+    case TAKE_A_SCREENSHOT:
+      Serial.println("Screenshot Taken");
+      break;
 
-    else if ((millis() - previousMillis > gearDownTime || millis() - previousMillis > clutchTime) && completeDownGearA == true && completeDownClutchA == true && (completeDownGearB == false || completeDownClutchB == false)) {
-       if (millis() - previousMillis > gearDownTime/2 && completeDownGearB == false) {
-        Serial.println("Downshift gear sequence B");
-        gearMotor.stop();
-        completeDownGearB = true;
-      }
+    case DO_NOTHING:
 
-      else if (millis() - previousMillis > clutchTime && completeDownClutchB == false) {
-        Serial.println("Downshift clutch sequence B");
-        clutchMotor.stop();
-        completeDownClutchB = true;
-      }
-      if(completeDownGearB == true && completeDownClutchB == true) {
-        Serial.println("Downshift gear and clutch sequence B");
-        previousMillis = millis();  
-        gearMotor.stop();
-        clutchMotor.stop();    
-      }
-    }
+      break;
 
-    if (completeDownGearB == true && completeDownClutchB == true && completeDownGearB == true && completeDownClutchB == true) {
-      Serial.println("Downshift sequence complete");
-      completeShift = true;
-    }
-    }
-    shiftState = DO_NOTHING;
-  break;
+    default:
 
-  case TAKE_A_SCREENSHOT:
-    Serial.println("Screenshot Taken");
-  break;
-
-  case DO_NOTHING:
-    
-  break;
-
-  default:
-    
-  break;
-}
+      break;
+  }
 }
 
 
@@ -266,13 +279,13 @@ switch(shiftState) {
 
 
 
-  
+
 
 // Returns true if current sensor detects an overcurrent condition
 bool overcurrent(long current) {
   long current_max = 2;        // maximum current threshold; change accordingly
-  
-  if (current >= current_max){
+
+  if (current >= current_max) {
     return true;          // current threshold is met or exceeded
   }
   else {
@@ -294,13 +307,13 @@ bool overheat(long temp) {
 }
 
 
-void estop(){
+void estop() {
   Serial.println();
   Serial.println("***Error: Overcurrent/Overheat detected ***");
   Serial.println();
   gearMotor.setSpeed(0);
   clutchMotor.setSpeed(0);
-  
+
   gearMotor.stop();
   clutchMotor.stop();
 
@@ -309,11 +322,11 @@ void estop(){
 
 
 // returns true if error acknowledged button is pressed
-bool errorAcknowledged(int input) { 
-   if (input == 1) {
-      return true;
-   }
-   else{
-      return false;
-   }
+bool errorAcknowledged(int input) {
+  if (input == 1) {
+    return true;
+  }
+  else {
+    return false;
+  }
 }
